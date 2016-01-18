@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>FOREX</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/css/bootstrap.min.css"/>
+    <link rel="stylesheet" type="text/css" href="//cdnjs.cloudflare.com/ajax/libs/dc/1.7.5/dc.css"/>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12">
+                <h1>Live FOREX Example</h1>
+                <div id="chart-forex"></div>
+                <div class="form-inline">
+                    <div class="form-group">
+                        <label for="currency">Currency</label>
+                        <select id="currency" class="form-control">
+                            <option value="GBPUSD">GBP (£) in USD ($)</option>
+                            <option value="EURUSD">EUR (€) in USD ($)</option>
+                            <option value="CHFUSD">CHF (Fr.) in USD ($)</option>
+                            <option value="DKKUSD">DKK (kr.) in USD ($)</option>
+                            <option value="SEKUSD">SEK (kr) in USD ($)</option>
+                            <option value="NOKUSD">NOK (kr) in USD ($)</option>
+                            <option value="RUBUSD">RUB (₽) in USD ($)</option>
+                            <option value="MXNUSD">MXN ($) in USD ($)</option>
+                            <option value="CADUSD">CAD ($) in USD ($)</option>
+                            <option value="AUDUSD">AUD ($) in USD ($)</option>
+                            <option value="JPYUSD">JPY (¥) in USD ($)</option>
+                            <option value="CNYUSD">CNY (¥) in USD ($)</option>
+                            <option value="HKDUSD">HKD ($) in USD ($)</option>
+                        </option>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.2.0/jquery.min.js"></script>
+    <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/d3/3.5.12/d3.min.js"></script>
+    <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/crossfilter/1.3.12/crossfilter.min.js"></script>
+    <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/dc/1.7.5/dc.min.js"></script>
+    <script type="text/javascript">
+
+        var App = function() {
+            // Configuration
+            this.refreshInterval = 2000;
+            this.dataLength = 240;
+            this.yAxisPrecision = 1e3;
+            this.data = [];
+
+            // Currencies
+            this.$currency = $('#currency');
+            var options = $.map(this.$currency.children('option') ,function(option) {
+                return '"' + option.value + '"';
+            });
+
+            // API url
+            this.url = '//query.yahooapis.com/v1/public/yql?q=select * from yahoo.finance.xchange where pair in (' +
+                        options.join(', ') + ')&env=store://datatables.org/alltableswithkeys';
+
+            // Data accessors
+            this.xAccessor = function(d) {
+                return d.t;
+            };
+            this.yAccessor = function(d) {
+                return d[this.$currency.val()];
+            }.bind(this);
+
+            // Crossfilter
+            this.ndx = crossfilter(this.data);
+            var dimension = this.ndx.dimension(this.xAccessor);
+            var group = dimension.group().reduceSum(this.yAccessor);
+
+            // Render chart
+            this.chart = dc.lineChart('#chart-forex');
+            this.chart
+                .width(800)
+                .height(400)
+                .margins({
+                    top: 10,
+                    right: 10,
+                    bottom: 40,
+                    left: 80
+                })
+                .brushOn(false)
+                .elasticX(true)
+                .xAxisLabel('Time')
+                .x(d3.time.scale())
+                .y(d3.scale.linear())
+                .dimension(dimension)
+                .group(group);
+
+            this.chart.yAxis().tickFormat(d3.format('$.4f'));
+
+            dc.renderAll();
+        };
+
+        /**
+         * Fetch chart data
+         */
+        App.prototype.refresh = function() {
+            $.get(this.url, this.update.bind(this));
+        };
+
+        /**
+         * Update chart data
+         */
+        App.prototype.update = function(doc) {
+
+            // Get data row
+            var row = this.getRow(doc);
+
+            // Append data
+            if (this.data.length > this.dataLength) {
+                this.data.shift();
+            }
+            this.data.push(row);
+
+            // Update chart y-axis
+            this.chart.y().domain(this.getDomain());
+            this.chart.yAxisLabel(this.$currency.find('option:selected').text());
+            this.chart.renderYAxis(this.chart.g());
+
+            // Update chart data
+            this.ndx.remove();
+            this.ndx.add(this.data);
+
+            // Redraw
+            dc.redrawAll();
+
+            // Queue next run
+            setTimeout(this.refresh.bind(this), this.refreshInterval);
+        };
+
+        /**
+         * Get data row
+         */
+        App.prototype.getRow = function(doc) {
+
+            // Initialise row
+            var row = $.extend({}, this.data[this.data.length-1], {t: new Date().getTime()});
+
+            // Get row data
+            $.each(doc.getElementsByTagName('rate'), function(idx, rate) {
+                var type = rate.getAttribute('id');
+                row[type] = +(rate.getElementsByTagName('Rate')[0].textContent);
+            });
+
+            return row;
+
+        };
+
+        /**
+         * Get y-axis domain
+         */
+        App.prototype.getDomain = function() {
+
+            var min = d3.min(this.data, this.yAccessor),
+                max = d3.max(this.data, this.yAccessor),
+                padding = (max - min) / 4;
+
+            return [
+                Math.floor((min - padding) * this.yAxisPrecision) / this.yAxisPrecision,
+                Math.ceil((max + padding) * this.yAxisPrecision) / this.yAxisPrecision
+            ];
+
+        };
+
+        // Start app
+        var app = new App();
+        app.refresh();
+    </script>
+</body>
+</html>
